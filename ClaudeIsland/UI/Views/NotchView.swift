@@ -189,6 +189,7 @@ struct NotchView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .preferredColorScheme(.dark)
         .onAppear {
+            viewModel.sessionMonitor = sessionMonitor
             sessionMonitor.startMonitoring()
             // On non-notched devices, keep visible so users have a target to interact with
             if !viewModel.hasPhysicalNotch {
@@ -357,7 +358,7 @@ struct NotchView: View {
                     viewModel: viewModel
                 )
             case .menu:
-                NotchMenuView(viewModel: viewModel)
+                NotchMenuView(viewModel: viewModel, sessionMonitor: sessionMonitor)
             case .chat(let session):
                 ChatView(
                     sessionId: session.sessionId,

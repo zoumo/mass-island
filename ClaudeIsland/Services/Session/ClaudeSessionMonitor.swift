@@ -18,7 +18,8 @@ class ClaudeSessionMonitor: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     init() {
-        SessionStore.shared.sessionsPublisher
+        // Session stream (MASS extension provides aggregatedSessionsPublisher)
+        Self.aggregatedSessionsPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] sessions in
                 self?.updateFromSessions(sessions)
@@ -31,7 +32,18 @@ class ClaudeSessionMonitor: ObservableObject {
     // MARK: - Monitoring Lifecycle
 
     func startMonitoring() {
-        // Start periodic status rechecking
+        if AppSettings.claudeCodeEnabled { startClaudeMonitoring() }
+        if AppSettings.massEnabled { startMassMonitoring() }
+    }
+
+    func stopMonitoring() {
+        stopClaudeMonitoring()
+        stopMassMonitoring()
+    }
+
+    // MARK: - Claude Backend (original)
+
+    func startClaudeMonitoring() {
         Task {
             await SessionStore.shared.startPeriodicStatusCheck()
         }
@@ -75,14 +87,14 @@ class ClaudeSessionMonitor: ObservableObject {
         )
     }
 
-    func stopMonitoring() {
+    func stopClaudeMonitoring() {
         HookSocketServer.shared.stop()
         Task {
             await SessionStore.shared.stopPeriodicStatusCheck()
         }
     }
 
-    // MARK: - Permission Handling
+    // MARK: - Permission Handling (Claude backend only)
 
     func approvePermission(sessionId: String) {
         Task {
@@ -137,7 +149,7 @@ class ClaudeSessionMonitor: ObservableObject {
 
     // MARK: - History Loading (for UI)
 
-    /// Request history load for a session
+    /// Request history load for a session (Claude Code only; MASS streams events directly)
     func loadHistory(sessionId: String, cwd: String) {
         Task {
             await SessionStore.shared.process(.loadHistory(sessionId: sessionId, cwd: cwd))

@@ -35,29 +35,22 @@ struct ClaudeInstancesView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Instances List
+    // MARK: - Grouping
 
-    /// Priority: active (approval/processing/compacting) > waitingForInput > idle
-    /// Secondary sort: by last user message date (stable - doesn't change when agent responds)
-    /// Note: approval requests stay in their date-based position to avoid layout shift
-    private var sortedInstances: [SessionState] {
-        sessionMonitor.instances.sorted { a, b in
+    @State var collapsedWorkspaces: Set<String> = []
+
+    func sortByPriority(_ sessions: [SessionState]) -> [SessionState] {
+        sessions.sorted { a, b in
             let priorityA = phasePriority(a.phase)
             let priorityB = phasePriority(b.phase)
-            if priorityA != priorityB {
-                return priorityA < priorityB
-            }
-            // Sort by last user message date (more recent first)
-            // Fall back to lastActivity if no user messages yet
+            if priorityA != priorityB { return priorityA < priorityB }
             let dateA = a.lastUserMessageDate ?? a.lastActivity
             let dateB = b.lastUserMessageDate ?? b.lastActivity
             return dateA > dateB
         }
     }
 
-    /// Lower number = higher priority
-    /// Approval requests share priority with processing to maintain stable ordering
-    private func phasePriority(_ phase: SessionPhase) -> Int {
+    func phasePriority(_ phase: SessionPhase) -> Int {
         switch phase {
         case .waitingForApproval, .processing, .compacting: return 0
         case .waitingForInput: return 1
@@ -65,24 +58,34 @@ struct ClaudeInstancesView: View {
         }
     }
 
+    // MARK: - Instances List
+
     private var instancesList: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 2) {
-                ForEach(sortedInstances) { session in
-                    InstanceRow(
-                        session: session,
-                        onFocus: { focusSession(session) },
-                        onChat: { openChat(session) },
-                        onArchive: { archiveSession(session) },
-                        onApprove: { approveSession(session) },
-                        onReject: { rejectSession(session) }
-                    )
-                    .id(session.stableId)
+                // Claude Code sessions (flat)
+                ForEach(ccSessions) { session in
+                    instanceRow(for: session)
                 }
+
+                // MASS workspaces (grouped, provided by extension)
+                massWorkspacesSection
             }
             .padding(.vertical, 4)
         }
         .scrollBounceBehavior(.basedOnSize)
+    }
+
+    func instanceRow(for session: SessionState) -> some View {
+        InstanceRow(
+            session: session,
+            onFocus: { focusSession(session) },
+            onChat: { openChat(session) },
+            onArchive: { archiveSession(session) },
+            onApprove: { approveSession(session) },
+            onReject: { rejectSession(session) }
+        )
+        .id(session.stableId)
     }
 
     // MARK: - Actions
@@ -172,6 +175,19 @@ struct InstanceRow: View {
             // Text content
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
+                    // Source badge (only for CC; MASS shown in workspace header)
+                    if session.source == .claudeCode {
+                        Text("CC")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(TerminalColors.prompt)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(TerminalColors.prompt.opacity(0.15))
+                            )
+                    }
+
                     Text(session.displayTitle)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.white)

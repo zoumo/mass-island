@@ -51,6 +51,10 @@ class NotchViewModel: ObservableObject {
     private let screenSelector = ScreenSelector.shared
     private let soundSelector = SoundSelector.shared
     private let claudeDirSelector = ClaudeDirSelector.shared
+    private let massSocketSelector = MassSocketSelector.shared
+
+    /// Session monitor reference for menu toggle actions
+    weak var sessionMonitor: ClaudeSessionMonitor?
 
     // MARK: - Geometry
 
@@ -68,7 +72,7 @@ class NotchViewModel: ObservableObject {
         case .chat:
             // Large size for chat view
             return CGSize(
-                width: min(screenRect.width * 0.5, 600),
+                width: min(screenRect.width * 0.6, 800),
                 height: 580
             )
         case .menu:
@@ -76,15 +80,16 @@ class NotchViewModel: ObservableObject {
             // Accessibility, Update, GitHub, Quit + 4 dividers + padding).
             // Picker expansion deltas added on top when expanded.
             return CGSize(
-                width: min(screenRect.width * 0.4, 480),
+                width: min(screenRect.width * 0.5, 600),
                 height: 540
                     + screenSelector.expandedPickerHeight
                     + soundSelector.expandedPickerHeight
                     + claudeDirSelector.expandedPickerHeight
+                    + massSocketSelector.expandedPickerHeight
             )
         case .instances:
             return CGSize(
-                width: min(screenRect.width * 0.4, 480),
+                width: min(screenRect.width * 0.5, 600),
                 height: 320
             )
         }
@@ -125,6 +130,10 @@ class NotchViewModel: ObservableObject {
             .store(in: &cancellables)
 
         claudeDirSelector.$isPickerExpanded
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+
+        massSocketSelector.$isPickerExpanded
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
     }

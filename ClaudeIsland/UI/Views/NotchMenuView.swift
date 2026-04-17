@@ -15,11 +15,15 @@ import Sparkle
 
 struct NotchMenuView: View {
     @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var sessionMonitor: ClaudeSessionMonitor
     @ObservedObject private var updateManager = UpdateManager.shared
     @ObservedObject private var screenSelector = ScreenSelector.shared
     @ObservedObject private var soundSelector = SoundSelector.shared
+    @ObservedObject var massSocketSelector = MassSocketSelector.shared
     @State private var hooksInstalled: Bool = false
     @State private var launchAtLogin: Bool = false
+    @State var claudeCodeEnabled: Bool = true
+    @State var massEnabled: Bool = true
 
     var body: some View {
         // ScrollView so the menu gracefully scrolls when content exceeds the
@@ -80,6 +84,31 @@ struct NotchMenuView: View {
                     }
                 }
 
+                Divider()
+                    .background(Color.white.opacity(0.08))
+                    .padding(.vertical, 4)
+
+                // Backend toggles
+                MenuToggleRow(
+                    icon: "terminal",
+                    label: "Claude Code",
+                    isOn: claudeCodeEnabled
+                ) {
+                    toggleClaudeCode()
+                }
+
+                MenuToggleRow(
+                    icon: "server.rack",
+                    label: "MASS Agent",
+                    isOn: massEnabled
+                ) {
+                    toggleMass()
+                }
+
+                if massEnabled {
+                    MassSocketPickerRow()
+                }
+
                 AccessibilityRow(isEnabled: AXIsProcessTrusted())
 
                 Divider()
@@ -127,8 +156,11 @@ struct NotchMenuView: View {
     private func refreshStates() {
         hooksInstalled = HookInstaller.isInstalled()
         launchAtLogin = SMAppService.mainApp.status == .enabled
+        claudeCodeEnabled = AppSettings.claudeCodeEnabled
+        massEnabled = AppSettings.massEnabled
         screenSelector.refreshScreens()
     }
+
 }
 
 // MARK: - Update Row

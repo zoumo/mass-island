@@ -21,7 +21,8 @@ class ChatHistoryManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
-        SessionStore.shared.sessionsPublisher
+        // Session stream (MASS extension provides aggregatedSessionsPublisher)
+        Self.aggregatedSessionsPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] sessions in
                 self?.updateFromSessions(sessions)

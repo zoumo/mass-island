@@ -353,14 +353,16 @@ struct ChatView: View {
 
     // MARK: - Input Bar
 
-    /// Can send messages only if session is in tmux
+    /// Can send messages: MASS sessions always, Claude Code sessions need tmux
     private var canSendMessages: Bool {
-        session.isInTmux && session.tty != nil
+        session.source == .mass || (session.isInTmux && session.tty != nil)
     }
 
     private var inputBar: some View {
         HStack(spacing: 10) {
-            TextField(canSendMessages ? "Message Claude..." : "Open Claude Code in tmux to enable messaging", text: $inputText)
+            TextField(canSendMessages
+                ? (session.source == .mass ? "Message Agent..." : "Message Claude...")
+                : "Open Claude Code in tmux to enable messaging", text: $inputText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundColor(canSendMessages ? .white : .white.opacity(0.4))
@@ -479,9 +481,11 @@ struct ChatView: View {
     }
 
     private func sendToSession(_ text: String) async {
-        guard session.isInTmux else { return }
-        guard let tty = session.tty else { return }
-
+        if session.source == .mass {
+            await sendToMassAgent(text)
+            return
+        }
+        guard session.isInTmux, let tty = session.tty else { return }
         if let target = await findTmuxTarget(tty: tty) {
             _ = await ToolApprovalHandler.shared.sendMessage(text, to: target)
         }

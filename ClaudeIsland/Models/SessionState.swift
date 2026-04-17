@@ -14,6 +14,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
     // MARK: - Identity
 
     let sessionId: String
+    let source: SessionSource
     let cwd: String
     let projectName: String
 
@@ -66,6 +67,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
 
     nonisolated init(
         sessionId: String,
+        source: SessionSource,
         cwd: String,
         projectName: String? = nil,
         pid: Int? = nil,
@@ -84,6 +86,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
         createdAt: Date = Date()
     ) {
         self.sessionId = sessionId
+        self.source = source
         self.cwd = cwd
         self.projectName = projectName ?? URL(fileURLWithPath: cwd).lastPathComponent
         self.pid = pid

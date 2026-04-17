@@ -32,7 +32,7 @@ enum NotificationSound: String, CaseIterable {
 }
 
 enum AppSettings {
-    private static let defaults = UserDefaults.standard
+    static let defaults = UserDefaults.standard
 
     // MARK: - Keys
 
