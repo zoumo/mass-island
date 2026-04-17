@@ -1,39 +1,52 @@
 <div align="center">
-  <img src="ClaudeIsland/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" alt="Logo" width="100" height="100">
-  <h3 align="center">Claude Island</h3>
+  <h3 align="center">Mass Island</h3>
   <p align="center">
-    A macOS menu bar app that brings Dynamic Island-style notifications to Claude Code CLI sessions.
+    macOS notch overlay for monitoring MASS agents and Claude Code sessions.
     <br />
-    <br />
-    <a href="https://github.com/farouqaldori/claude-island/releases/latest" target="_blank" rel="noopener noreferrer">
-      <img src="https://img.shields.io/github/v/release/farouqaldori/claude-island?style=rounded&color=white&labelColor=000000&label=release" alt="Release Version" />
-    </a>
-    <a href="#" target="_blank" rel="noopener noreferrer">
-      <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/farouqaldori/claude-island/total?style=rounded&color=white&labelColor=000000">
-    </a>
+    Fork of <a href="https://github.com/farouqaldori/claude-island">Claude Island</a>, extended with MASS daemon integration.
   </p>
 </div>
 
-> **🟢 Actively maintained**
->
-> Launched v1.2 in December 2025, then took a 4-month break. v1.3 (April 2026) works through the backlog of contributor PRs and bug reports and kicks off a regular cadence again. Open PRs and issues are being reviewed — thanks for your patience.
+## What Changed from Claude Island
 
-## Features
+- **Dual backend** — Claude Code Hook path (original) + MASS daemon ARI (JSON-RPC over Unix socket)
+- **Backend toggles** — Claude Code and MASS can be independently enabled/disabled
+- **MASS socket config** — UI picker for custom socket path (default `/run/mass/mass.sock`)
+- **Connection resilience** — Exponential backoff retry, auto-reconnect on daemon disconnect
+- **Protocol alignment** — ARI types matching MASS Go daemon wire format (ACP ContentBlock, runtime state, etc.)
+- **SIGPIPE protection** — SO_NOSIGPIPE on Unix sockets to prevent crash on broken pipe
+- **Renamed** — Binary, bundle ID (`com.celestial.MassIsland`), logger subsystem all updated
 
-- **Notch UI** — Animated overlay that expands from the MacBook notch
-- **Live Session Monitoring** — Track multiple Claude Code sessions in real-time
-- **Permission Approvals** — Approve or deny tool executions directly from the notch
-- **Chat History** — View full conversation history with markdown rendering
-- **Auto-Setup** — Hooks install automatically on first launch
+## Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│                 Mass Island                 │
+│                                             │
+│  ┌──────────────┐    ┌───────────────────┐  │
+│  │  Hook Path   │    │    MASS Path      │  │
+│  │  (Claude Code)│    │  (ARI daemon)     │  │
+│  │              │    │                   │  │
+│  │ HookSocket   │    │ MassClient        │  │
+│  │ SessionStore │    │ MassPoller        │  │
+│  │ FileWatcher  │    │ EventWatcher      │  │
+│  └──────┬───────┘    └────────┬──────────┘  │
+│         │    Combine merge    │              │
+│         └────────┬────────────┘              │
+│                  ▼                           │
+│       ClaudeSessionMonitor                  │
+│                  │                           │
+│                  ▼                           │
+│            Notch UI (SwiftUI)               │
+└─────────────────────────────────────────────┘
+```
 
 ## Requirements
 
 - macOS 15.6+
-- Claude Code CLI
+- MASS daemon and/or Claude Code CLI
 
-## Install
-
-Download the latest release or build from source:
+## Build
 
 ```bash
 xcodebuild -scheme ClaudeIsland -configuration Release build
@@ -41,19 +54,12 @@ xcodebuild -scheme ClaudeIsland -configuration Release build
 
 ## How It Works
 
-Claude Island installs hooks into `~/.claude/hooks/` that communicate session state via a Unix socket. The app listens for events and displays them in the notch overlay.
+**Claude Code path**: Hooks in `~/.claude/hooks/` communicate session state via Unix socket. Same as original Claude Island.
 
-When Claude needs permission to run a tool, the notch expands with approve/deny buttons—no need to switch to the terminal.
+**MASS path**: Connects to MASS daemon socket, polls `agentrun/list` for active agent runs, subscribes to per-agent `runtime/watch_event` for live event streaming (K8s list-watch pattern).
 
-## Analytics
-
-Claude Island uses Mixpanel to collect anonymous usage data:
-
-- **App Launched** — App version, build number, macOS version
-- **Session Started** — When a new Claude Code session is detected
-
-No personal data or conversation content is collected.
+Both paths merge into a unified session list displayed in the notch overlay.
 
 ## License
 
-Apache 2.0
+Apache 2.0 — inherited from [Claude Island](https://github.com/farouqaldori/claude-island)
