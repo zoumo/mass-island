@@ -63,13 +63,21 @@ struct ClaudeInstancesView: View {
     private var instancesList: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 2) {
-                // Claude Code sessions (flat)
-                ForEach(ccSessions) { session in
+                // Active zone: active workspaces first, then active CC sessions
+                ForEach(activeMassWorkspaces, id: \.workspace) { group in
+                    workspaceSection(for: group)
+                }
+                ForEach(activeCCSessions) { session in
                     instanceRow(for: session)
                 }
 
-                // MASS workspaces (grouped, provided by extension)
-                massWorkspacesSection
+                // Inactive zone: inactive workspaces first, then inactive CC sessions
+                ForEach(inactiveMassWorkspaces, id: \.workspace) { group in
+                    workspaceSection(for: group)
+                }
+                ForEach(inactiveCCSessions) { session in
+                    instanceRow(for: session)
+                }
             }
             .padding(.vertical, 4)
         }

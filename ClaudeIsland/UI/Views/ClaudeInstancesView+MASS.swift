@@ -11,53 +11,78 @@ import SwiftUI
 // MARK: - MASS Grouping & Section
 
 extension ClaudeInstancesView {
-    /// Claude Code sessions sorted by priority then date
-    var ccSessions: [SessionState] {
-        sortByPriority(sessionMonitor.instances.filter { $0.source == .claudeCode })
+    // MARK: - Session Grouping
+
+    /// Whether a session is active (processing/approval/compacting)
+    func isActive(_ session: SessionState) -> Bool {
+        phasePriority(session.phase) == 0
     }
 
-    /// MASS sessions grouped by workspace
+    /// Whether a workspace group has any active session
+    func isWorkspaceActive(_ group: (workspace: String, sessions: [SessionState])) -> Bool {
+        group.sessions.contains { isActive($0) }
+    }
+
+    /// All MASS workspaces grouped by workspace name
     var massWorkspaces: [(workspace: String, sessions: [SessionState])] {
         let massSessions = sessionMonitor.instances.filter { $0.source == .mass }
         let grouped = Dictionary(grouping: massSessions) { session -> String in
-            // sessionId is "workspace/name", extract workspace
             let parts = session.sessionId.split(separator: "/", maxSplits: 1)
             return parts.count >= 1 ? String(parts[0]) : "default"
         }
         return grouped
             .map { (workspace: $0.key, sessions: sortByPriority($0.value)) }
             .sorted { a, b in
-                // Sort workspaces: any active agent first, then alphabetical
-                let activeA = a.sessions.contains { phasePriority($0.phase) == 0 }
-                let activeB = b.sessions.contains { phasePriority($0.phase) == 0 }
+                let activeA = a.sessions.contains { isActive($0) }
+                let activeB = b.sessions.contains { isActive($0) }
                 if activeA != activeB { return activeA }
                 return a.workspace < b.workspace
             }
     }
 
-    /// MASS workspaces section for the instances list
+    /// Active MASS workspaces (any session processing/approval)
+    var activeMassWorkspaces: [(workspace: String, sessions: [SessionState])] {
+        massWorkspaces.filter { isWorkspaceActive($0) }
+    }
+
+    /// Inactive MASS workspaces
+    var inactiveMassWorkspaces: [(workspace: String, sessions: [SessionState])] {
+        massWorkspaces.filter { !isWorkspaceActive($0) }
+    }
+
+    /// Active CC sessions
+    var activeCCSessions: [SessionState] {
+        sortByPriority(sessionMonitor.instances.filter { $0.source == .claudeCode && isActive($0) })
+    }
+
+    /// Inactive CC sessions
+    var inactiveCCSessions: [SessionState] {
+        sortByPriority(sessionMonitor.instances.filter { $0.source == .claudeCode && !isActive($0) })
+    }
+
+    // MARK: - MASS Workspace Section
+
+    /// Render a workspace group (header + rows)
     @ViewBuilder
-    var massWorkspacesSection: some View {
-        ForEach(massWorkspaces, id: \.workspace) { group in
-            WorkspaceSectionHeader(
-                workspace: group.workspace,
-                agentCount: group.sessions.count,
-                isCollapsed: collapsedWorkspaces.contains(group.workspace)
-            ) {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    if collapsedWorkspaces.contains(group.workspace) {
-                        collapsedWorkspaces.remove(group.workspace)
-                    } else {
-                        collapsedWorkspaces.insert(group.workspace)
-                    }
+    func workspaceSection(for group: (workspace: String, sessions: [SessionState])) -> some View {
+        WorkspaceSectionHeader(
+            workspace: group.workspace,
+            agentCount: group.sessions.count,
+            isCollapsed: collapsedWorkspaces.contains(group.workspace)
+        ) {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                if collapsedWorkspaces.contains(group.workspace) {
+                    collapsedWorkspaces.remove(group.workspace)
+                } else {
+                    collapsedWorkspaces.insert(group.workspace)
                 }
             }
+        }
 
-            if !collapsedWorkspaces.contains(group.workspace) {
-                ForEach(group.sessions) { session in
-                    instanceRow(for: session)
-                        .padding(.leading, 12)
-                }
+        if !collapsedWorkspaces.contains(group.workspace) {
+            ForEach(group.sessions) { session in
+                instanceRow(for: session)
+                    .padding(.leading, 12)
             }
         }
     }

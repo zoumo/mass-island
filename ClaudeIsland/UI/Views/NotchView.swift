@@ -39,6 +39,23 @@ struct NotchView: View {
         sessionMonitor.instances.contains { $0.phase.isWaitingForApproval }
     }
 
+    /// Number of active (processing/compacting/approval) sessions across all sources
+    private var activeAgentCount: Int {
+        sessionMonitor.instances.filter {
+            $0.phase == .processing || $0.phase == .compacting || $0.phase.isWaitingForApproval
+        }.count
+    }
+
+    /// Total session count
+    private var totalAgentCount: Int {
+        sessionMonitor.instances.count
+    }
+
+    /// Whether to show agent counter in closed pill (more than 1 session)
+    private var showAgentCounter: Bool {
+        totalAgentCount > 1
+    }
+
     /// Whether any Claude session is waiting for user input (done/ready state) within the display window
     private var hasWaitingForInput: Bool {
         let now = Date()
@@ -67,13 +84,15 @@ struct NotchView: View {
     private var expansionWidth: CGFloat {
         // Permission indicator adds width on left side only
         let permissionIndicatorWidth: CGFloat = hasPendingPermission ? 18 : 0
+        // Agent counter adds width on right side
+        let agentCounterWidth: CGFloat = showAgentCounter ? 56 : 0
 
         // Expand for processing activity
         if activityCoordinator.expandingActivity.show {
             switch activityCoordinator.expandingActivity.type {
             case .claude:
                 let baseWidth = 2 * max(0, closedNotchSize.height - 12) + 20
-                return baseWidth + permissionIndicatorWidth
+                return baseWidth + permissionIndicatorWidth + agentCounterWidth
             case .none:
                 break
             }
@@ -81,7 +100,7 @@ struct NotchView: View {
 
         // Expand for pending permissions (left indicator) or waiting for input (checkmark on right)
         if hasPendingPermission {
-            return 2 * max(0, closedNotchSize.height - 12) + 20 + permissionIndicatorWidth
+            return 2 * max(0, closedNotchSize.height - 12) + 20 + permissionIndicatorWidth + agentCounterWidth
         }
 
         // Waiting for input just shows checkmark on right, no extra left indicator
@@ -274,18 +293,35 @@ struct NotchView: View {
                     .frame(width: closedNotchSize.width - 20)
             } else {
                 // Closed with activity: black spacer (with optional bounce)
+                // Widen center when agent counter is visible so pill expands symmetrically
+                let counterExtra: CGFloat = showAgentCounter ? 40 : 0
                 Rectangle()
                     .fill(.black)
-                    .frame(width: closedNotchSize.width - cornerRadiusInsets.closed.top + (isBouncing ? 16 : 0))
+                    .frame(width: closedNotchSize.width - cornerRadiusInsets.closed.top + counterExtra + (isBouncing ? 16 : 0))
             }
 
-            // Right side - spinner when processing/pending, checkmark when waiting for input
+            // Right side - spinner + agent counter when processing/pending, checkmark when waiting for input
             if showClosedActivity {
                 if isProcessing || hasPendingPermission {
-                    ProcessingSpinner()
-                        .matchedGeometryEffect(id: "spinner", in: activityNamespace, isSource: showClosedActivity)
-                        .frame(width: viewModel.status == .opened ? 20 : sideWidth)
-                        .padding(.trailing, viewModel.status == .opened ? 0 : 4)
+                    HStack(spacing: 4) {
+                        ProcessingSpinner()
+                            .matchedGeometryEffect(id: "spinner", in: activityNamespace, isSource: showClosedActivity)
+
+                        if viewModel.status != .opened && showAgentCounter {
+                            HStack(spacing: 1) {
+                                Text("\(activeAgentCount)")
+                                    .foregroundColor(TerminalColors.green)
+                                Text("/")
+                                    .foregroundColor(.white.opacity(0.3))
+                                Text("\(totalAgentCount)")
+                                    .foregroundColor(Color(red: 0.85, green: 0.47, blue: 0.34))
+                            }
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        }
+                    }
+                    .frame(width: viewModel.status == .opened ? 20 : nil)
+                    .fixedSize(horizontal: viewModel.status != .opened, vertical: false)
+                    .padding(.trailing, viewModel.status == .opened ? 0 : 4)
                 } else if hasWaitingForInput {
                     // Checkmark for waiting-for-input on the right side
                     ReadyForInputIndicatorIcon(size: 14, color: TerminalColors.green)

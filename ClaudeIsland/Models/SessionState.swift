@@ -285,10 +285,14 @@ struct SubagentState: Equatable, Sendable {
     /// Mapping of agentId to Task description (for AgentOutputTool display)
     var agentDescriptions: [String: String]
 
-    nonisolated init(activeTasks: [String: TaskContext] = [:], taskStack: [String] = [], agentDescriptions: [String: String] = [:]) {
+    /// Total agents spawned this turn (only resets on Stop)
+    var totalTaskCount: Int
+
+    nonisolated init(activeTasks: [String: TaskContext] = [:], taskStack: [String] = [], agentDescriptions: [String: String] = [:], totalTaskCount: Int = 0) {
         self.activeTasks = activeTasks
         self.taskStack = taskStack
         self.agentDescriptions = agentDescriptions
+        self.totalTaskCount = totalTaskCount
     }
 
     /// Whether there's an active subagent
@@ -296,8 +300,14 @@ struct SubagentState: Equatable, Sendable {
         !activeTasks.isEmpty
     }
 
+    /// Number of currently active agents
+    nonisolated var activeTaskCount: Int {
+        activeTasks.count
+    }
+
     /// Start tracking a Task tool
     nonisolated mutating func startTask(taskToolId: String, description: String? = nil) {
+        totalTaskCount += 1
         activeTasks[taskToolId] = TaskContext(
             taskToolId: taskToolId,
             startTime: Date(),

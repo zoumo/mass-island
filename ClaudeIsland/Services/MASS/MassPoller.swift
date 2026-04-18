@@ -52,7 +52,6 @@ actor MassPoller {
         let currentKeys = Set(runs.map { agentRunKey($0) })
         let knownKeys = Set(knownRuns.keys)
 
-        // Discovered or state changed — fetch full detail via agentrun/get
         for run in runs {
             let key = agentRunKey(run)
             let isNew = !knownKeys.contains(key)
@@ -77,6 +76,9 @@ actor MassPoller {
                 } else {
                     await onStateChanged?(fullRun)
                 }
+            } else {
+                // State unchanged — still reconcile phase in case watcher missed an event
+                await onStateChanged?(run)
             }
         }
 
