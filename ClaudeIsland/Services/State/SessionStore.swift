@@ -124,10 +124,21 @@ actor SessionStore {
         let sessionId = event.sessionId
         var session = sessions[sessionId] ?? createSession(from: event)
 
+        Self.logger.debug("[hook] session=\(sessionId.prefix(8), privacy: .public) event=\(event.event, privacy: .public) pid=\(event.pid.map { String($0) } ?? "nil", privacy: .public) tty=\(event.tty ?? "nil", privacy: .public) mux=\(String(describing: session.multiplexer), privacy: .public)")
+
         session.pid = event.pid
         if let pid = event.pid {
             let tree = ProcessTreeBuilder.shared.buildTree()
-            session.isInTmux = ProcessTreeBuilder.shared.isInTmux(pid: pid, tree: tree)
+            let detectedMux = ProcessTreeBuilder.shared.detectMultiplexer(pid: pid, tree: tree)
+            session.multiplexer = detectedMux
+            Self.logger.info("[mux] pid=\(pid) detected=\(String(describing: detectedMux), privacy: .public) tty=\(event.tty ?? "nil", privacy: .public)")
+        }
+        if let surfaceId = event.cmuxSurfaceId, !surfaceId.isEmpty {
+            // Always update: hook provides current valid surface ref via `cmux identify`
+            if session.cmuxSurfaceId != surfaceId {
+                Self.logger.info("[cmux] surfaceRef updated to \(surfaceId, privacy: .public) for session=\(sessionId.prefix(8), privacy: .public)")
+            }
+            session.cmuxSurfaceId = surfaceId
         }
         if let tty = event.tty {
             session.tty = tty.replacingOccurrences(of: "/dev/", with: "")
@@ -176,7 +187,7 @@ actor SessionStore {
             projectName: URL(fileURLWithPath: event.cwd).lastPathComponent,
             pid: event.pid,
             tty: event.tty?.replacingOccurrences(of: "/dev/", with: ""),
-            isInTmux: false,  // Will be updated
+            multiplexer: .none,  // Will be updated
             phase: .idle
         )
     }
@@ -927,11 +938,13 @@ actor SessionStore {
     // MARK: - History Loading
 
     private func loadHistoryFromFile(sessionId: String, cwd: String) async {
+        let t0 = CFAbsoluteTimeGetCurrent()
         // Parse file asynchronously
         let messages = await ConversationParser.shared.parseFullConversation(
             sessionId: sessionId,
             cwd: cwd
         )
+        let t1 = CFAbsoluteTimeGetCurrent()
         let completedTools = await ConversationParser.shared.completedToolIds(for: sessionId)
         let toolResults = await ConversationParser.shared.toolResults(for: sessionId)
         let structuredResults = await ConversationParser.shared.structuredResults(for: sessionId)
@@ -941,6 +954,9 @@ actor SessionStore {
             sessionId: sessionId,
             cwd: cwd
         )
+        let t2 = CFAbsoluteTimeGetCurrent()
+
+        Self.logger.info("[perf] loadHistoryFromFile(\(sessionId, privacy: .public)): parseConversation=\(String(format: "%.1f", (t1-t0)*1000), privacy: .public)ms parseInfo=\(String(format: "%.1f", (t2-t1)*1000), privacy: .public)ms msgs=\(messages.count, privacy: .public)")
 
         // Process loaded history
         await process(.historyLoaded(
@@ -961,6 +977,7 @@ actor SessionStore {
         structuredResults: [String: ToolResultData],
         conversationInfo: ConversationInfo
     ) async {
+        let t0 = CFAbsoluteTimeGetCurrent()
         guard var session = sessions[sessionId] else { return }
 
         // Update conversationInfo (summary, lastMessage, etc.)
@@ -992,6 +1009,8 @@ actor SessionStore {
         session.chatItems.sort { $0.timestamp < $1.timestamp }
 
         sessions[sessionId] = session
+        let t1 = CFAbsoluteTimeGetCurrent()
+        Self.logger.info("[perf] processHistoryLoaded(\(sessionId, privacy: .public)): chatItems=\(session.chatItems.count, privacy: .public) time=\(String(format: "%.1f", (t1-t0)*1000), privacy: .public)ms")
     }
 
     // MARK: - File Sync Scheduling
@@ -1134,4 +1153,7 @@ actor SessionStore {
     func allSessions() -> [SessionState] {
         Array(sessions.values)
     }
+
+    // MARK: - cmux Helpers
+
 }

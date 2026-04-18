@@ -6,6 +6,9 @@
 //
 
 import Foundation
+import os.log
+
+private let muxLogger = Logger(subsystem: "com.claudeisland", category: "Multiplexer")
 
 /// Information about a process in the tree
 struct ProcessInfo: Sendable {
@@ -52,6 +55,42 @@ struct ProcessTreeBuilder: Sendable {
         }
 
         return tree
+    }
+
+    /// Detect which multiplexer (if any) a process runs in
+    nonisolated func detectMultiplexer(pid: Int, tree: [Int: ProcessInfo]) -> MultiplexerType {
+        // Log parent chain for debugging
+        var chain: [String] = []
+        var cur = pid
+        var d = 0
+        while cur > 1 && d < 10 {
+            guard let info = tree[cur] else { break }
+            chain.append("\(cur):\(info.command)")
+            cur = info.ppid
+            d += 1
+        }
+        muxLogger.info("[detectMux] pid=\(pid) chain=\(chain.joined(separator: " -> "), privacy: .public)")
+
+        if isInTmux(pid: pid, tree: tree) { return .tmux }
+        if isInCmux(pid: pid, tree: tree) { return .cmux }
+        return .none
+    }
+
+    /// Check if a process has cmux in its parent chain
+    nonisolated func isInCmux(pid: Int, tree: [Int: ProcessInfo]) -> Bool {
+        var current = pid
+        var depth = 0
+
+        while current > 1 && depth < 20 {
+            guard let info = tree[current] else { break }
+            if info.command.lowercased().contains("cmux") {
+                return true
+            }
+            current = info.ppid
+            depth += 1
+        }
+
+        return false
     }
 
     /// Check if a process has tmux in its parent chain

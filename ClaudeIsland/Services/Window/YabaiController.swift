@@ -15,23 +15,35 @@ actor YabaiController {
 
     // MARK: - Public API
 
-    /// Focus the terminal window for a given Claude PID (tmux only)
-    func focusWindow(forClaudePid claudePid: Int) async -> Bool {
-        guard await WindowFinder.shared.isYabaiAvailable() else {
-            return false
-        }
-
-        let windows = await WindowFinder.shared.getAllWindows()
+    /// Focus the terminal window for a given Claude PID
+    func focusWindow(forClaudePid claudePid: Int, multiplexer: MultiplexerType = .tmux, cmuxSurfaceId: String? = nil) async -> Bool {
         let tree = ProcessTreeBuilder.shared.buildTree()
 
-        return await focusTmuxInstance(claudePid: claudePid, tree: tree, windows: windows)
+        switch multiplexer {
+        case .cmux:
+            guard let surfaceId = cmuxSurfaceId else { return false }
+            return await CmuxController.shared.focusSurface(surfaceId)
+        case .tmux:
+            guard await WindowFinder.shared.isYabaiAvailable() else { return false }
+            let windows = await WindowFinder.shared.getAllWindows()
+            return await focusTmuxInstance(claudePid: claudePid, tree: tree, windows: windows)
+        case .none:
+            return false
+        }
     }
 
-    /// Focus the terminal window for a given working directory (tmux only, fallback)
-    func focusWindow(forWorkingDirectory workingDirectory: String) async -> Bool {
-        guard await WindowFinder.shared.isYabaiAvailable() else { return false }
-
-        return await focusWindow(forWorkingDir: workingDirectory)
+    /// Focus the terminal window for a given working directory
+    func focusWindow(forWorkingDirectory workingDirectory: String, multiplexer: MultiplexerType = .tmux, cmuxSurfaceId: String? = nil) async -> Bool {
+        switch multiplexer {
+        case .cmux:
+            guard let surfaceId = cmuxSurfaceId else { return false }
+            return await CmuxController.shared.focusSurface(surfaceId)
+        case .tmux:
+            guard await WindowFinder.shared.isYabaiAvailable() else { return false }
+            return await focusWindow(forWorkingDir: workingDirectory)
+        case .none:
+            return false
+        }
     }
 
     // MARK: - Private Implementation

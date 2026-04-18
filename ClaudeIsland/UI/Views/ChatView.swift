@@ -6,9 +6,11 @@
 //
 
 import Combine
+import os.log
 import SwiftUI
 
 struct ChatView: View {
+    private static let logger = Logger(subsystem: "com.claudeisland", category: "ChatView")
     let sessionId: String
     let initialSession: SessionState
     let sessionMonitor: ClaudeSessionMonitor
@@ -112,13 +114,15 @@ struct ChatView: View {
             }
         }
         .onReceive(ChatHistoryManager.shared.$histories) { histories in
+            let t0 = CFAbsoluteTimeGetCurrent()
             // Update when count changes, last item differs, or content changes (e.g., tool status)
             if let newHistory = histories[sessionId] {
                 let countChanged = newHistory.count != history.count
                 let lastItemChanged = newHistory.last?.id != history.last?.id
-                // Always update - the @Published ensures we only get notified on real changes
-                // This allows tool status updates (waitingForApproval -> running) to reflect
-                if countChanged || lastItemChanged || newHistory != history {
+                // Quick checks first, fall back to O(n) equality only if needed
+                let needsFullCompare = !countChanged && !lastItemChanged
+                let contentChanged = needsFullCompare ? (newHistory != history) : true
+                if countChanged || lastItemChanged || contentChanged {
                     // Track new messages when autoscroll is paused
                     if isAutoscrollPaused && newHistory.count > previousHistoryCount {
                         let addedCount = newHistory.count - previousHistoryCount
@@ -136,6 +140,11 @@ struct ChatView: View {
                     // If we have data, skip loading state (handles view recreation)
                     if isLoading && !newHistory.isEmpty {
                         isLoading = false
+                    }
+
+                    let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+                    if elapsed > 5 {
+                        Self.logger.warning("[perf] onReceive: items=\(newHistory.count, privacy: .public) fullCompare=\(needsFullCompare, privacy: .public) time=\(String(format: "%.1f", elapsed), privacy: .public)ms (SLOW)")
                     }
                 }
             } else if hasLoadedOnce {
@@ -353,16 +362,19 @@ struct ChatView: View {
 
     // MARK: - Input Bar
 
-    /// Can send messages: MASS sessions always, Claude Code sessions need tmux
+    /// Can send messages: MASS sessions always, Claude Code sessions need multiplexer
     private var canSendMessages: Bool {
-        session.source == .mass || (session.isInTmux && session.tty != nil)
+        if session.source == .mass { return true }
+        if session.isInTmux && session.tty != nil { return true }
+        if session.isInCmux && session.cmuxSurfaceId != nil { return true }
+        return false
     }
 
     private var inputBar: some View {
         HStack(spacing: 10) {
             TextField(canSendMessages
                 ? (session.source == .mass ? "Message Agent..." : "Message Claude...")
-                : "Open Claude Code in tmux to enable messaging", text: $inputText)
+                : "Open Claude Code in tmux/cmux to enable messaging", text: $inputText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundColor(canSendMessages ? .white : .white.opacity(0.4))
@@ -382,15 +394,27 @@ struct ChatView: View {
                     sendMessage()
                 }
 
-            Button {
-                sendMessage()
-            } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 28))
-                    .foregroundColor(!canSendMessages || inputText.isEmpty ? .white.opacity(0.2) : .white.opacity(0.9))
+            if session.source == .mass && isProcessing {
+                // Stop button for running MASS agents
+                Button {
+                    Task { await cancelMassAgent() }
+                } label: {
+                    Image(systemName: "stop.circle.fill")
+                        .font(.system(size: 28))
+                        .foregroundColor(.white.opacity(0.9))
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button {
+                    sendMessage()
+                } label: {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 28))
+                        .foregroundColor(!canSendMessages || inputText.isEmpty ? .white.opacity(0.2) : .white.opacity(0.9))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSendMessages || inputText.isEmpty)
             }
-            .buttonStyle(.plain)
-            .disabled(!canSendMessages || inputText.isEmpty)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -424,7 +448,7 @@ struct ChatView: View {
     /// Bar for interactive tools like AskUserQuestion that need terminal input
     private var interactivePromptBar: some View {
         ChatInteractivePromptBar(
-            isInTmux: session.isInTmux,
+            isInMultiplexer: session.isInMultiplexer,
             onGoToTerminal: { focusTerminal() }
         )
     }
@@ -449,9 +473,9 @@ struct ChatView: View {
     private func focusTerminal() {
         Task {
             if let pid = session.pid {
-                _ = await YabaiController.shared.focusWindow(forClaudePid: pid)
+                _ = await YabaiController.shared.focusWindow(forClaudePid: pid, multiplexer: session.multiplexer, cmuxSurfaceId: session.cmuxSurfaceId)
             } else {
-                _ = await YabaiController.shared.focusWindow(forWorkingDirectory: session.cwd)
+                _ = await YabaiController.shared.focusWindow(forWorkingDirectory: session.cwd, multiplexer: session.multiplexer, cmuxSurfaceId: session.cmuxSurfaceId)
             }
         }
     }
@@ -481,13 +505,23 @@ struct ChatView: View {
     }
 
     private func sendToSession(_ text: String) async {
+
         if session.source == .mass {
             await sendToMassAgent(text)
             return
         }
-        guard session.isInTmux, let tty = session.tty else { return }
-        if let target = await findTmuxTarget(tty: tty) {
-            _ = await ToolApprovalHandler.shared.sendMessage(text, to: target)
+
+        switch session.multiplexer {
+        case .tmux:
+            guard let tty = session.tty else { return }
+            if let target = await findTmuxTarget(tty: tty) {
+                _ = await ToolApprovalHandler.shared.sendMessage(text, to: target)
+            }
+        case .cmux:
+            guard let surfaceId = session.cmuxSurfaceId else { return }
+            _ = await CmuxController.shared.sendMessage(text, surfaceId: surfaceId)
+        case .none:
+            return
         }
     }
 
@@ -1054,7 +1088,7 @@ struct InterruptedMessageView: View {
 
 /// Bar for interactive tools like AskUserQuestion that need terminal input
 struct ChatInteractivePromptBar: View {
-    let isInTmux: Bool
+    let isInMultiplexer: Bool
     let onGoToTerminal: () -> Void
 
     @State private var showContent = false
@@ -1079,7 +1113,7 @@ struct ChatInteractivePromptBar: View {
 
             // Terminal button on right (similar to Allow button)
             Button {
-                if isInTmux {
+                if isInMultiplexer {
                     onGoToTerminal()
                 }
             } label: {
@@ -1089,10 +1123,10 @@ struct ChatInteractivePromptBar: View {
                     Text("Terminal")
                         .font(.system(size: 13, weight: .medium))
                 }
-                .foregroundColor(isInTmux ? .black : .white.opacity(0.4))
+                .foregroundColor(isInMultiplexer ? .black : .white.opacity(0.4))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(isInTmux ? Color.white.opacity(0.95) : Color.white.opacity(0.1))
+                .background(isInMultiplexer ? Color.white.opacity(0.95) : Color.white.opacity(0.1))
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)

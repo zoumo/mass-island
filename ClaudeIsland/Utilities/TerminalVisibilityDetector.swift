@@ -50,13 +50,18 @@ struct TerminalVisibilityDetector {
         }
 
         let tree = ProcessTreeBuilder.shared.buildTree()
-        let isInTmux = ProcessTreeBuilder.shared.isInTmux(pid: sessionPid, tree: tree)
+        let mux = ProcessTreeBuilder.shared.detectMultiplexer(pid: sessionPid, tree: tree)
 
-        if isInTmux {
+        switch mux {
+        case .tmux:
             // For tmux sessions, check if the session's pane is active
             return await TmuxTargetFinder.shared.isSessionPaneActive(claudePid: sessionPid)
-        } else {
-            // For non-tmux sessions, check if the session's terminal app is frontmost
+        case .cmux:
+            // For cmux sessions, assume focused if terminal is frontmost
+            // (cmux doesn't expose a "which surface is active" query yet)
+            return true
+        case .none:
+            // For non-multiplexer sessions, check if the session's terminal app is frontmost
             guard let sessionTerminalPid = ProcessTreeBuilder.shared.findTerminalPid(forProcess: sessionPid, tree: tree),
                   let frontmostApp = NSWorkspace.shared.frontmostApplication else {
                 return false

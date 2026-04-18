@@ -41,6 +41,20 @@
 └─────────────────────────────────────────────┘
 ```
 
+## Terminal Multiplexer Support
+
+Mass Island supports both **tmux** and **cmux** as terminal multiplexers. Features like focus (eye icon), message sending, and tool approval work in either.
+
+### cmux Setup
+
+If you run Claude Code inside [cmux](https://github.com/manaflow-ai/cmux), you need to open cmux's socket access:
+
+1. Open **cmux Settings** (gear icon or `Cmd+,`)
+2. Find **Socket Control Mode** (套接字控制模式)
+3. Change from "Only cmux processes" (仅限 cmux 进程) to **"All local processes"** (所有本地进程)
+
+Without this, Mass Island cannot communicate with cmux to send messages or focus surfaces — you'll see "Broken pipe" errors in logs.
+
 ## Requirements
 
 - macOS 15.6+

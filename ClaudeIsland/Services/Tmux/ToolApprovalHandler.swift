@@ -48,6 +48,48 @@ actor ToolApprovalHandler {
         await sendKeys(to: target, keys: message, pressEnter: true)
     }
 
+    // MARK: - MultiplexerTarget Dispatch
+
+    /// Send message via any multiplexer
+    func sendMessage(_ message: String, to target: MultiplexerTarget) async -> Bool {
+        switch target {
+        case .tmux(let tmuxTarget):
+            return await sendMessage(message, to: tmuxTarget)
+        case .cmux(let surfaceId):
+            return await CmuxController.shared.sendMessage(message, surfaceId: surfaceId)
+        }
+    }
+
+    /// Approve once via any multiplexer
+    func approveOnce(target: MultiplexerTarget) async -> Bool {
+        switch target {
+        case .tmux(let tmuxTarget):
+            return await approveOnce(target: tmuxTarget)
+        case .cmux(let surfaceId):
+            return await CmuxController.shared.approveOnce(surfaceId: surfaceId)
+        }
+    }
+
+    /// Approve always via any multiplexer
+    func approveAlways(target: MultiplexerTarget) async -> Bool {
+        switch target {
+        case .tmux(let tmuxTarget):
+            return await approveAlways(target: tmuxTarget)
+        case .cmux(let surfaceId):
+            return await CmuxController.shared.approveAlways(surfaceId: surfaceId)
+        }
+    }
+
+    /// Reject via any multiplexer
+    func reject(target: MultiplexerTarget, message: String? = nil) async -> Bool {
+        switch target {
+        case .tmux(let tmuxTarget):
+            return await reject(target: tmuxTarget, message: message)
+        case .cmux(let surfaceId):
+            return await CmuxController.shared.reject(surfaceId: surfaceId, message: message)
+        }
+    }
+
     // MARK: - Private Methods
 
     private func sendKeys(to target: TmuxTarget, keys: String, pressEnter: Bool) async -> Bool {

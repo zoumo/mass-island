@@ -13,4 +13,9 @@ extension ChatView {
     func sendToMassAgent(_ text: String) async {
         try? await sessionMonitor.sendMassPrompt(sessionId: sessionId, prompt: text)
     }
+
+    /// Cancel current operation on a MASS agent run
+    func cancelMassAgent() async {
+        try? await sessionMonitor.cancelMassSession(sessionId: sessionId)
+    }
 }

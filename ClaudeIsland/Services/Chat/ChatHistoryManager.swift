@@ -5,6 +5,7 @@
 
 import Combine
 import Foundation
+import os.log
 
 @MainActor
 class ChatHistoryManager: ObservableObject {
@@ -81,16 +82,26 @@ class ChatHistoryManager: ObservableObject {
 
     // MARK: - State Updates
 
+    private static let logger = Logger(subsystem: "com.claudeisland", category: "ChatHistory")
+
     private func updateFromSessions(_ sessions: [SessionState]) {
+        let t0 = CFAbsoluteTimeGetCurrent()
         var newHistories: [String: [ChatHistoryItem]] = [:]
         var newAgentDescriptions: [String: [String: String]] = [:]
+        var totalItems = 0
         for session in sessions {
             let filteredItems = filterOutSubagentTools(session.chatItems)
             newHistories[session.sessionId] = filteredItems
             newAgentDescriptions[session.sessionId] = session.subagentState.agentDescriptions
+            totalItems += filteredItems.count
         }
         histories = newHistories
         agentDescriptions = newAgentDescriptions
+        let t1 = CFAbsoluteTimeGetCurrent()
+        let elapsed = (t1 - t0) * 1000
+        if elapsed > 5 {
+            Self.logger.warning("[perf] updateFromSessions: sessions=\(sessions.count, privacy: .public) totalItems=\(totalItems, privacy: .public) time=\(String(format: "%.1f", elapsed), privacy: .public)ms (SLOW)")
+        }
     }
 
     private func filterOutSubagentTools(_ items: [ChatHistoryItem]) -> [ChatHistoryItem] {

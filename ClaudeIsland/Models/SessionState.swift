@@ -22,7 +22,13 @@ struct SessionState: Equatable, Identifiable, Sendable {
 
     var pid: Int?
     var tty: String?
-    var isInTmux: Bool
+    var multiplexer: MultiplexerType
+    var cmuxSurfaceId: String?
+
+    /// Backward-compatible computed properties
+    var isInTmux: Bool { multiplexer == .tmux }
+    var isInCmux: Bool { multiplexer == .cmux }
+    var isInMultiplexer: Bool { multiplexer != .none }
 
     // MARK: - State Machine
 
@@ -72,7 +78,8 @@ struct SessionState: Equatable, Identifiable, Sendable {
         projectName: String? = nil,
         pid: Int? = nil,
         tty: String? = nil,
-        isInTmux: Bool = false,
+        multiplexer: MultiplexerType = .none,
+        cmuxSurfaceId: String? = nil,
         phase: SessionPhase = .idle,
         chatItems: [ChatHistoryItem] = [],
         toolTracker: ToolTracker = ToolTracker(),
@@ -91,7 +98,8 @@ struct SessionState: Equatable, Identifiable, Sendable {
         self.projectName = projectName ?? URL(fileURLWithPath: cwd).lastPathComponent
         self.pid = pid
         self.tty = tty
-        self.isInTmux = isInTmux
+        self.multiplexer = multiplexer
+        self.cmuxSurfaceId = cmuxSurfaceId
         self.phase = phase
         self.chatItems = chatItems
         self.toolTracker = toolTracker

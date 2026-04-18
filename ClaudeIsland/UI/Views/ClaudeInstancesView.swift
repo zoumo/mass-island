@@ -82,6 +82,7 @@ struct ClaudeInstancesView: View {
             onFocus: { focusSession(session) },
             onChat: { openChat(session) },
             onArchive: { archiveSession(session) },
+            onCancel: { cancelSession(session) },
             onApprove: { approveSession(session) },
             onReject: { rejectSession(session) }
         )
@@ -91,13 +92,13 @@ struct ClaudeInstancesView: View {
     // MARK: - Actions
 
     private func focusSession(_ session: SessionState) {
-        guard session.isInTmux else { return }
+        guard session.isInMultiplexer else { return }
 
         Task {
             if let pid = session.pid {
-                _ = await YabaiController.shared.focusWindow(forClaudePid: pid)
+                _ = await YabaiController.shared.focusWindow(forClaudePid: pid, multiplexer: session.multiplexer, cmuxSurfaceId: session.cmuxSurfaceId)
             } else {
-                _ = await YabaiController.shared.focusWindow(forWorkingDirectory: session.cwd)
+                _ = await YabaiController.shared.focusWindow(forWorkingDirectory: session.cwd, multiplexer: session.multiplexer, cmuxSurfaceId: session.cmuxSurfaceId)
             }
         }
     }
@@ -114,6 +115,12 @@ struct ClaudeInstancesView: View {
         sessionMonitor.denyPermission(sessionId: session.sessionId, reason: nil)
     }
 
+    private func cancelSession(_ session: SessionState) {
+        Task {
+            try? await sessionMonitor.cancelMassSession(sessionId: session.sessionId)
+        }
+    }
+
     private func archiveSession(_ session: SessionState) {
         sessionMonitor.archiveSession(sessionId: session.sessionId)
     }
@@ -126,6 +133,7 @@ struct InstanceRow: View {
     let onFocus: () -> Void
     let onChat: () -> Void
     let onArchive: () -> Void
+    let onCancel: () -> Void
     let onApprove: () -> Void
     let onReject: () -> Void
 
@@ -284,9 +292,9 @@ struct InstanceRow: View {
                     }
 
                     // Go to Terminal button (only if yabai available)
-                    if isYabaiAvailable {
+                    if isYabaiAvailable || session.isInCmux {
                         TerminalButton(
-                            isEnabled: session.isInTmux,
+                            isEnabled: session.isInMultiplexer,
                             onTap: { onFocus() }
                         )
                     }
@@ -307,9 +315,16 @@ struct InstanceRow: View {
                     }
 
                     // Focus icon (only for tmux instances with yabai)
-                    if session.isInTmux && isYabaiAvailable {
+                    if session.isInMultiplexer && (isYabaiAvailable || session.isInCmux) {
                         IconButton(icon: "eye") {
                             onFocus()
+                        }
+                    }
+
+                    // Cancel button - for MASS agents currently running
+                    if session.source == .mass && session.phase == .processing {
+                        IconButton(icon: "stop.circle") {
+                            onCancel()
                         }
                     }
 

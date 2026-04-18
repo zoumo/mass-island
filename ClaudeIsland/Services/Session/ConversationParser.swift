@@ -117,12 +117,19 @@ actor ConversationParser {
             return cached.info
         }
 
+        let t0 = CFAbsoluteTimeGetCurrent()
         guard let data = fileManager.contents(atPath: sessionFile),
               let content = String(data: data, encoding: .utf8) else {
             return ConversationInfo(summary: nil, lastMessage: nil, lastMessageRole: nil, lastToolName: nil, firstUserMessage: nil, lastUserMessageDate: nil)
         }
+        let t1 = CFAbsoluteTimeGetCurrent()
 
         let info = parseContent(content)
+        let t2 = CFAbsoluteTimeGetCurrent()
+
+        let fileSizeKB = Double(data.count) / 1024.0
+        Self.logger.info("[perf] parse(\(sessionId, privacy: .public)): fileRead=\(String(format: "%.1f", (t1-t0)*1000), privacy: .public)ms parseContent=\(String(format: "%.1f", (t2-t1)*1000), privacy: .public)ms fileSize=\(String(format: "%.0f", fileSizeKB), privacy: .public)KB")
+
         cache[sessionFile] = CachedInfo(modificationDate: modDate, info: info)
 
         return info
@@ -130,7 +137,9 @@ actor ConversationParser {
 
     /// Parse JSONL content
     private func parseContent(_ content: String) -> ConversationInfo {
+        let t0 = CFAbsoluteTimeGetCurrent()
         let lines = content.components(separatedBy: "\n").filter { !$0.isEmpty }
+        let lineCount = lines.count
 
         var summary: String?
         var lastMessage: String?
@@ -143,6 +152,7 @@ actor ConversationParser {
         let formatter = Self.isoFormatter
 
         // First pass: collect usage from all assistant messages
+        let tPass1 = CFAbsoluteTimeGetCurrent()
         for line in lines {
             guard let lineData = line.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
@@ -158,7 +168,9 @@ actor ConversationParser {
                 usage.cacheCreationTokens += usageDict["cache_creation_input_tokens"] as? Int ?? 0
             }
         }
+        let tPass2 = CFAbsoluteTimeGetCurrent()
 
+        // Second pass: find first user message
         for line in lines {
             guard let lineData = line.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
@@ -178,7 +190,9 @@ actor ConversationParser {
                 }
             }
         }
+        let tPass3 = CFAbsoluteTimeGetCurrent()
 
+        // Third pass (reversed): find last message, last user date, summary
         var foundLastUserMessage = false
         for line in lines.reversed() {
             guard let lineData = line.data(using: .utf8),
@@ -242,6 +256,9 @@ actor ConversationParser {
                 break
             }
         }
+        let tEnd = CFAbsoluteTimeGetCurrent()
+
+        Self.logger.info("[perf] parseContent: lines=\(lineCount, privacy: .public) pass1(usage)=\(String(format: "%.1f", (tPass2-tPass1)*1000), privacy: .public)ms pass2(firstUser)=\(String(format: "%.1f", (tPass3-tPass2)*1000), privacy: .public)ms pass3(reversed)=\(String(format: "%.1f", (tEnd-tPass3)*1000), privacy: .public)ms total=\(String(format: "%.1f", (tEnd-t0)*1000), privacy: .public)ms")
 
         return ConversationInfo(
             summary: summary,
@@ -371,6 +388,7 @@ actor ConversationParser {
 
     /// Parse only new lines since last read (incremental)
     private func parseNewLines(filePath: String, state: inout IncrementalParseState) -> [ChatMessage] {
+        let t0 = CFAbsoluteTimeGetCurrent()
         guard let fileHandle = FileHandle(forReadingAtPath: filePath) else {
             return []
         }
@@ -472,7 +490,11 @@ actor ConversationParser {
             }
         }
 
+        let prevOffset = state.lastFileOffset
+        let totalMsgCount = state.messages.count
         state.lastFileOffset = fileSize
+        let tEnd = CFAbsoluteTimeGetCurrent()
+        Self.logger.info("[perf] parseNewLines: newMsgs=\(newMessages.count, privacy: .public) totalMsgs=\(totalMsgCount, privacy: .public) bytesRead=\(fileSize - prevOffset, privacy: .public) time=\(String(format: "%.1f", (tEnd-t0)*1000), privacy: .public)ms")
         return newMessages
     }
 
