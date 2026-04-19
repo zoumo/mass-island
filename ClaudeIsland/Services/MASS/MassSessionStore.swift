@@ -184,9 +184,9 @@ actor MassSessionStore {
         let newPhase = massStateToPhase(run.status.state)
 
         if sessions[id] != nil {
-            if sessions[id]!.phase.canTransition(to: newPhase) {
-                sessions[id]!.phase = newPhase
-            }
+            // MASS agent state is authoritative from daemon — override even from .ended
+            // (daemon may restart an agent, so .ended is not truly terminal for MASS)
+            sessions[id]!.phase = newPhase
             sessions[id]!.lastActivity = Date()
         }
 
@@ -223,9 +223,7 @@ actor MassSessionStore {
         guard sessions[id] != nil else { return }
         if let runtimeStatus = status.state.status {
             let newPhase = massStateToPhase(runtimeStatus)
-            if sessions[id]!.phase.canTransition(to: newPhase) {
-                sessions[id]!.phase = newPhase
-            }
+            sessions[id]!.phase = newPhase
         }
         publishState()
     }
@@ -242,15 +240,10 @@ actor MassSessionStore {
             if let rtStatus = event.payload?.runtimeStatus,
                let newStatus = rtStatus.status {
                 let newPhase = massStateToPhase(newStatus)
-                if session.phase.canTransition(to: newPhase) {
-                    session.phase = newPhase
-                }
+                session.phase = newPhase
                 // Backup turn_end: idle status means turn is done
                 if newStatus == "idle" {
-                    let idlePhase: SessionPhase = .waitingForInput
-                    if session.phase.canTransition(to: idlePhase) {
-                        session.phase = idlePhase
-                    }
+                    session.phase = .waitingForInput
                 }
             }
             if let info = event.payload?.sessionInfo, let title = info.title {
@@ -404,10 +397,7 @@ actor MassSessionStore {
             )
 
         case EventType.turnStart:
-            let newPhase: SessionPhase = .processing
-            if session.phase.canTransition(to: newPhase) {
-                session.phase = newPhase
-            }
+            session.phase = .processing
 
         case EventType.turnEnd:
             // Flush any in-progress text buffers
@@ -415,10 +405,7 @@ actor MassSessionStore {
             flushTextBuffer(id: id, role: .thinking)
             sessions[id].map { session = $0 }
 
-            let newPhase: SessionPhase = .waitingForInput
-            if session.phase.canTransition(to: newPhase) {
-                session.phase = newPhase
-            }
+            session.phase = .waitingForInput
 
         default:
             break
