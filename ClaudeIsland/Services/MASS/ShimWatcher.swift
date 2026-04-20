@@ -26,6 +26,8 @@ actor EventWatcher {
                 try await connectAndWatch()
             } catch {
                 NSLog("[EventWatcher:%@] connection error: %@", sessionId, "\(error)")
+                // Reset seq on reconnect — server may have restarted with seq back to 0
+                lastSeq = 0
                 if running {
                     try? await Task.sleep(for: .seconds(2))
                 }

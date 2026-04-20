@@ -28,6 +28,7 @@ actor MassSessionStore {
 
     private var sessions: [String: SessionState] = [:]
     private var watchers: [String: EventWatcher] = [:]
+    private var watcherSocketPaths: [String: String] = [:]
     private var textBuffers: [String: String] = [:]
     private var poller: MassPoller?
     private var massClient: MassClient?
@@ -115,6 +116,7 @@ actor MassSessionStore {
                 await watcher.stop()
             }
             watchers.removeAll()
+            watcherSocketPaths.removeAll()
             sessions.removeAll()
             sentPrompt = false
             publishState()
@@ -171,6 +173,7 @@ actor MassSessionStore {
 
     private func handleRemoved(_ key: String) {
         sessions.removeValue(forKey: key)
+        watcherSocketPaths.removeValue(forKey: key)
         if let watcher = watchers.removeValue(forKey: key) {
             Task { await watcher.stop() }
         }
@@ -190,9 +193,18 @@ actor MassSessionStore {
             sessions[id]!.lastActivity = Date()
         }
 
-        // Start watcher if runtime socket appeared
-        if let socketPath = run.status.run?.socketPath, watchers[id] == nil {
-            startWatcher(id: id, socketPath: socketPath)
+        // Start or restart watcher if runtime socket appeared or changed
+        if let socketPath = run.status.run?.socketPath {
+            if watchers[id] == nil {
+                startWatcher(id: id, socketPath: socketPath)
+            } else if watcherSocketPaths[id] != socketPath {
+                // Socket path changed (server restart) — rebuild watcher
+                if let oldWatcher = watchers.removeValue(forKey: id) {
+                    Task { await oldWatcher.stop() }
+                }
+                watcherSocketPaths.removeValue(forKey: id)
+                startWatcher(id: id, socketPath: socketPath)
+            }
         }
 
         publishState()
@@ -205,6 +217,7 @@ actor MassSessionStore {
 
         let watcher = EventWatcher(socketPath: socketPath, sessionId: id)
         watchers[id] = watcher
+        watcherSocketPaths[id] = socketPath
 
         Task {
             await watcher.setOnEvent { [weak self] sessionId, event in
