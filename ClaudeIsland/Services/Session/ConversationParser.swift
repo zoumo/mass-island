@@ -45,6 +45,9 @@ struct ConversationInfo: Equatable {
 actor ConversationParser {
     static let shared = ConversationParser()
 
+    static let maxRecentLines = 500
+    static let maxHeadLines = 50
+
     /// Logger for conversation parser (nonisolated static for cross-context access)
     nonisolated static let logger = Logger(subsystem: "com.claudeisland", category: "Parser")
 
@@ -124,22 +127,31 @@ actor ConversationParser {
         }
         let t1 = CFAbsoluteTimeGetCurrent()
 
-        let info = parseContent(content)
+        let allLines = content.components(separatedBy: "\n").filter { !$0.isEmpty }
+        let tailLines: [String]
+        let headLines: [String]
+        if allLines.count > Self.maxRecentLines {
+            tailLines = Array(allLines.suffix(Self.maxRecentLines))
+            headLines = Array(allLines.prefix(Self.maxHeadLines))
+        } else {
+            tailLines = allLines
+            headLines = allLines
+        }
+
+        let info = parseContent(tailLines: tailLines, headLines: headLines, totalLineCount: allLines.count)
         let t2 = CFAbsoluteTimeGetCurrent()
 
         let fileSizeKB = Double(data.count) / 1024.0
-        Self.logger.info("[perf] parse(\(sessionId, privacy: .public)): fileRead=\(String(format: "%.1f", (t1-t0)*1000), privacy: .public)ms parseContent=\(String(format: "%.1f", (t2-t1)*1000), privacy: .public)ms fileSize=\(String(format: "%.0f", fileSizeKB), privacy: .public)KB")
+        Self.logger.info("[perf] parse(\(sessionId, privacy: .public)): fileRead=\(String(format: "%.1f", (t1-t0)*1000), privacy: .public)ms parseContent=\(String(format: "%.1f", (t2-t1)*1000), privacy: .public)ms fileSize=\(String(format: "%.0f", fileSizeKB), privacy: .public)KB lines=\(allLines.count)/\(tailLines.count)")
 
         cache[sessionFile] = CachedInfo(modificationDate: modDate, info: info)
 
         return info
     }
 
-    /// Parse JSONL content
-    private func parseContent(_ content: String) -> ConversationInfo {
+    /// Parse JSONL content using tail/head line slices for performance
+    private func parseContent(tailLines: [String], headLines: [String], totalLineCount: Int) -> ConversationInfo {
         let t0 = CFAbsoluteTimeGetCurrent()
-        let lines = content.components(separatedBy: "\n").filter { !$0.isEmpty }
-        let lineCount = lines.count
 
         var summary: String?
         var lastMessage: String?
@@ -151,9 +163,9 @@ actor ConversationParser {
 
         let formatter = Self.isoFormatter
 
-        // First pass: collect usage from all assistant messages
+        // Pass 1: collect usage from tail lines (approximate but fast)
         let tPass1 = CFAbsoluteTimeGetCurrent()
-        for line in lines {
+        for line in tailLines {
             guard let lineData = line.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
                 continue
@@ -170,8 +182,8 @@ actor ConversationParser {
         }
         let tPass2 = CFAbsoluteTimeGetCurrent()
 
-        // Second pass: find first user message
-        for line in lines {
+        // Pass 2: find first user message from head lines
+        for line in headLines {
             guard let lineData = line.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
                 continue
@@ -192,9 +204,9 @@ actor ConversationParser {
         }
         let tPass3 = CFAbsoluteTimeGetCurrent()
 
-        // Third pass (reversed): find last message, last user date, summary
+        // Pass 3 (reversed tail): find last message, last user date, summary
         var foundLastUserMessage = false
-        for line in lines.reversed() {
+        for line in tailLines.reversed() {
             guard let lineData = line.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
                 continue
@@ -258,7 +270,7 @@ actor ConversationParser {
         }
         let tEnd = CFAbsoluteTimeGetCurrent()
 
-        Self.logger.info("[perf] parseContent: lines=\(lineCount, privacy: .public) pass1(usage)=\(String(format: "%.1f", (tPass2-tPass1)*1000), privacy: .public)ms pass2(firstUser)=\(String(format: "%.1f", (tPass3-tPass2)*1000), privacy: .public)ms pass3(reversed)=\(String(format: "%.1f", (tEnd-tPass3)*1000), privacy: .public)ms total=\(String(format: "%.1f", (tEnd-t0)*1000), privacy: .public)ms")
+        Self.logger.info("[perf] parseContent: total=\(totalLineCount, privacy: .public) tail=\(tailLines.count, privacy: .public) head=\(headLines.count, privacy: .public) pass1(usage)=\(String(format: "%.1f", (tPass2-tPass1)*1000), privacy: .public)ms pass2(firstUser)=\(String(format: "%.1f", (tPass3-tPass2)*1000), privacy: .public)ms pass3(reversed)=\(String(format: "%.1f", (tEnd-tPass3)*1000), privacy: .public)ms total=\(String(format: "%.1f", (tEnd-t0)*1000), privacy: .public)ms")
 
         return ConversationInfo(
             summary: summary,
