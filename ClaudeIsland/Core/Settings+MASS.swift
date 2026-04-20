@@ -27,7 +27,7 @@ extension AppSettings {
             }
             let stored = defaults.string(forKey: MASSKeys.massSocketPath) ?? ""
             if !stored.isEmpty { return stored }
-            return "/run/mass/mass.sock"
+            return NSHomeDirectory() + "/.mass/socket"
         }
         set {
             defaults.set(newValue.trimmingCharacters(in: .whitespaces), forKey: MASSKeys.massSocketPath)
