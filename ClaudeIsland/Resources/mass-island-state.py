@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Claude Island Hook
-- Sends session state to ClaudeIsland.app via Unix socket
+Mass Island Hook
+- Sends session state to Mass Island.app via Unix socket
 - For PermissionRequest: waits for user decision from the app
 """
 import json
@@ -86,6 +86,9 @@ def main():
     claude_pid = os.getppid()
     tty = get_tty()
 
+    # Detect cmux environment
+    cmux_surface_id = os.environ.get("CMUX_SURFACE_ID")
+
     # Build state object
     state = {
         "session_id": session_id,
@@ -94,6 +97,9 @@ def main():
         "pid": claude_pid,
         "tty": tty,
     }
+
+    if cmux_surface_id:
+        state["cmux_surface_id"] = cmux_surface_id
 
     # Map events to status
     if event == "UserPromptSubmit":

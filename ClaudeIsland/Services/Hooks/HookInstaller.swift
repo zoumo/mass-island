@@ -12,14 +12,14 @@ struct HookInstaller {
     /// Install hook script and update settings.json on app launch
     static func installIfNeeded() {
         let hooksDir = ClaudePaths.hooksDir
-        let pythonScript = hooksDir.appendingPathComponent("claude-island-state.py")
+        let pythonScript = hooksDir.appendingPathComponent("mass-island-state.py")
 
         try? FileManager.default.createDirectory(
             at: hooksDir,
             withIntermediateDirectories: true
         )
 
-        if let bundled = Bundle.main.url(forResource: "claude-island-state", withExtension: "py") {
+        if let bundled = Bundle.main.url(forResource: "mass-island-state", withExtension: "py") {
             try? FileManager.default.removeItem(at: pythonScript)
             try? FileManager.default.copyItem(at: bundled, to: pythonScript)
             try? FileManager.default.setAttributes(
@@ -231,7 +231,7 @@ struct HookInstaller {
                     if let entryHooks = entry["hooks"] as? [[String: Any]] {
                         for hook in entryHooks {
                             if let cmd = hook["command"] as? String,
-                               cmd.contains("claude-island-state.py") {
+                               cmd.contains("mass-island-state.py") {
                                 return true
                             }
                         }
@@ -245,7 +245,7 @@ struct HookInstaller {
     /// Uninstall hooks from settings.json and remove script
     static func uninstall() {
         let hooksDir = ClaudePaths.hooksDir
-        let pythonScript = hooksDir.appendingPathComponent("claude-island-state.py")
+        let pythonScript = hooksDir.appendingPathComponent("mass-island-state.py")
         let settings = ClaudePaths.settingsFile
 
         try? FileManager.default.removeItem(at: pythonScript)
@@ -315,6 +315,6 @@ struct HookInstaller {
 
     nonisolated private static func isClaudeIslandHook(_ hook: [String: Any]) -> Bool {
         let cmd = hook["command"] as? String ?? ""
-        return cmd.contains("claude-island-state.py")
+        return cmd.contains("mass-island-state.py")
     }
 }

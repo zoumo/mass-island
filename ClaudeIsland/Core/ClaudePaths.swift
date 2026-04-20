@@ -66,7 +66,7 @@ enum ClaudePaths {
     /// Absolute paths keep custom directories and ~/.config/claude working;
     /// quoting keeps paths with spaces from being split by the shell.
     static var hookScriptShellPath: String {
-        shellQuote(claudeDir.appendingPathComponent("hooks/claude-island-state.py").path)
+        shellQuote(claudeDir.appendingPathComponent("hooks/mass-island-state.py").path)
     }
 
     /// Invalidate the cached directory so the next access re-resolves.
