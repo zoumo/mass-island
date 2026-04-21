@@ -7,8 +7,43 @@
 
 import AppKit
 import CoreGraphics
+import Foundation
 
 struct TerminalVisibilityDetector {
+    /// Check if another app is in fullscreen mode on the current space.
+    /// Queries on-screen windows (current space) for any standard-layer window
+    /// whose size covers the full screen — this indicates a native-fullscreen app.
+    /// Our own windows (Mass Island) are excluded.
+    static func isFullscreenAppActive() -> Bool {
+        guard let screen = NSScreen.main else { return false }
+
+        let selfPid = getpid()
+        guard let windowList = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
+        ) as? [[String: Any]] else {
+            return false
+        }
+
+        let screenW = screen.frame.width
+        let screenH = screen.frame.height
+
+        for window in windowList {
+            guard let pid = window[kCGWindowOwnerPID as String] as? Int32,
+                  pid != selfPid,
+                  let layer = window[kCGWindowLayer as String] as? Int,
+                  layer == 0,
+                  let bounds = window[kCGWindowBounds as String] as? [String: CGFloat] else {
+                continue
+            }
+            let w = bounds["Width"] ?? 0
+            let h = bounds["Height"] ?? 0
+            if w >= screenW && h >= screenH {
+                return true
+            }
+        }
+        return false
+    }
+
     /// Check if any terminal window is visible on the current space
     static func isTerminalVisibleOnCurrentSpace() -> Bool {
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]

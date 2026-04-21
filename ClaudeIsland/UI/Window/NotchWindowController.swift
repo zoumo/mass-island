@@ -86,11 +86,54 @@ class NotchWindowController: NSWindowController {
         // Start with ignoring mouse events (closed state)
         notchWindow.ignoresMouseEvents = true
 
+        // Hide notch window when a fullscreen app is on the current space
+        NSWorkspace.shared.notificationCenter
+            .publisher(for: NSWorkspace.activeSpaceDidChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updateVisibilityForFullscreen()
+            }
+            .store(in: &cancellables)
+
+        // Also check when app activation changes
+        NSWorkspace.shared.notificationCenter
+            .publisher(for: NSWorkspace.didActivateApplicationNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updateVisibilityForFullscreen()
+            }
+            .store(in: &cancellables)
+
+        NSWorkspace.shared.notificationCenter
+            .publisher(for: NSWorkspace.didDeactivateApplicationNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                // Small delay to let the system settle after deactivation
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    self?.updateVisibilityForFullscreen()
+                }
+            }
+            .store(in: &cancellables)
+
         // Perform boot animation after a brief delay (only on initial launch)
         if animateOnLaunch {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 self?.viewModel.performBootAnimation()
             }
+        }
+    }
+
+    private func updateVisibilityForFullscreen() {
+        guard let window = self.window else { return }
+
+        if TerminalVisibilityDetector.isFullscreenAppActive() {
+            // Close notch if open, then hide window
+            if viewModel.status == .opened {
+                viewModel.notchClose()
+            }
+            window.orderOut(nil)
+        } else {
+            window.orderFront(nil)
         }
     }
 
