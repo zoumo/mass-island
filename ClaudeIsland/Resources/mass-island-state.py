@@ -9,7 +9,7 @@ import os
 import socket
 import sys
 
-SOCKET_PATH = "/tmp/claude-island.sock"
+SOCKET_PATH = "/tmp/mass-island.sock"
 TIMEOUT_SECONDS = 300  # 5 minutes for permission decisions
 
 
@@ -71,11 +71,25 @@ def send_event(state):
         return None
 
 
+def _debug_log(msg):
+    """Append debug line to /tmp/mass-island-hook.log"""
+    import datetime
+    try:
+        with open("/tmp/mass-island-hook.log", "a") as f:
+            f.write(f"{datetime.datetime.now().isoformat()} {msg}\n")
+    except Exception:
+        pass
+
+
 def main():
+    _debug_log("hook invoked")
     try:
         data = json.load(sys.stdin)
     except json.JSONDecodeError:
+        _debug_log("FAIL: json decode error on stdin")
         sys.exit(1)
+
+    _debug_log(f"event={data.get('hook_event_name','')} session={data.get('session_id','?')[:8]} status will be mapped next")
 
     session_id = data.get("session_id", "unknown")
     event = data.get("hook_event_name", "")
@@ -232,6 +246,7 @@ def main():
         state["status"] = "unknown"
 
     # Send to socket (fire and forget for non-permission events)
+    _debug_log(f"sending: event={state.get('event')} status={state.get('status')} session={state.get('session_id','')[:8]}")
     send_event(state)
 
 
