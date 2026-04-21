@@ -153,9 +153,14 @@ actor SessionStore {
 
         let newPhase = event.determinePhase()
 
-        if session.phase.canTransition(to: newPhase) {
+        // SubagentStop/SubagentStart only affect subagent tracking, not the
+        // main session phase — a late SubagentStop arriving after Stop would
+        // otherwise flip the session back to .processing
+        let isSubagentEvent = event.event == "SubagentStop" || event.event == "SubagentStart"
+
+        if !isSubagentEvent && session.phase.canTransition(to: newPhase) {
             session.phase = newPhase
-        } else {
+        } else if !isSubagentEvent {
             Self.logger.debug("Invalid transition: \(String(describing: session.phase), privacy: .public) -> \(String(describing: newPhase), privacy: .public), ignoring")
         }
 
@@ -1084,6 +1089,7 @@ actor SessionStore {
     /// Recheck status of all active sessions
     private func recheckAllSessions() {
         var removedSession = false
+        var stateChanged = false
 
         for (sessionId, session) in Array(sessions) {
             if session.phase == .ended {
@@ -1104,6 +1110,19 @@ actor SessionStore {
                 }
             }
 
+            // Detect stale processing: if JSONL last message is not from user
+            // and no hook event received for 10+ seconds, the Stop hook likely
+            // never fired — recover to waitingForInput
+            if session.phase == .processing || session.phase == .compacting {
+                let staleness = Date().timeIntervalSince(session.lastActivity)
+                let lastRole = session.conversationInfo.lastMessageRole
+                if staleness > 10 && lastRole != nil && lastRole != "user" {
+                    Self.logger.info("Session \(sessionId.prefix(8)) appears idle (last JSONL role=\(lastRole ?? "nil"), no hook for \(Int(staleness))s), recovering to waitingForInput")
+                    sessions[sessionId]?.phase = .waitingForInput
+                    stateChanged = true
+                }
+            }
+
             let needsSync: Bool
             switch session.phase {
             case .processing, .waitingForApproval:
@@ -1116,7 +1135,7 @@ actor SessionStore {
             }
         }
 
-        if removedSession {
+        if removedSession || stateChanged {
             publishState()
         }
     }
